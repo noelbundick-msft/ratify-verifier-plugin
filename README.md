@@ -11,16 +11,15 @@ It exercises a range of functions to help you get started writing your own plugi
 
 For more details on how plugins work, please visit the [verifier specification](https://github.com/deislabs/ratify/blob/main/docs/verifier.md)
 
-## Usage
+## Build
 
-### Build
+Ratify ships a [distroless](https://github.com/GoogleContainerTools/distroless) image, so your plugin must be built with `CGO_ENABLED=0`. Ex:
 
 ```shell
-# Build the plugin
-go build -o sample .
+CGO_ENABLED=0 go build -o sample .
 ```
 
-### Standalone testing
+## Standalone testing
 
 Ratify plugins use a combination of environment variables and STDIN to run plugins. This example sets the environment variables in the shell and uses the data from `hack/stdin.json` to provide configuration
 
@@ -32,7 +31,9 @@ export RATIFY_VERIFIER_SUBJECT=wabbitnetworks.azurecr.io/test/notary-image:signe
 cat hack/stdin.json | ./sample
 ```
 
-### Debugging in VS Code
+> Note: You can run Ratify with `RATIFY_LOG_LEVEL=debug` to log the values used to invoke plugins to aid in development
+
+## Debugging in VS Code
 
 You can debug your verifier using VS Code
 
@@ -41,7 +42,7 @@ You can debug your verifier using VS Code
 - At this point, the debugger is active but waiting for input. You'll have the plugin running in a terminal pane
 - Copy the contents of `hack/stdin.json` and paste it into the terminal, then **press Ctrl+D to send EOF** to the input stream, which will trigger the plugin to execute
 
-### Local usage with Ratify
+## Local usage with Ratify
 
 After it has been built, the binary is ready be used with Ratify
 
@@ -49,7 +50,7 @@ First, copy it to the plugins dir to make it available for use
 
 ```shell
 # Copy to the default Ratify plugins dir
-mkdir ~/.ratify/plugins
+mkdir -p ~/.ratify/plugins
 cp ./sample ~/.ratify/plugins/sample
 ```
 
@@ -84,31 +85,54 @@ Next, add an entry to `verifier.plugins` in the Ratify config to activate your v
 }
 ```
 
-### Deploy with Ratify to Kubernetes
+## Deploy with Ratify to Kubernetes
 
-Ratify ships a [distroless](https://github.com/GoogleContainerTools/distroless) image, so your plugin must be built with `CGO_ENABLED=0`, ex:
+Ratify needs to be able to access your plugin executable in order to use it at runtime. Ratify has a [dynamic plugins](https://github.com/deislabs/ratify/blob/main/docs/reference/dynamic-plugins.md) feature that enables stores and verifiers to be stored as OCI artifacts and then pulled down at runtime when the plugin is registered via CRD.
+
+> This requires the dynamic plugins feature to be enabled in your Ratify installation
+
+Uploading a plugin as an OCI artifact:
 
 ```shell
-CGO_ENABLED=0 go build -o sample .
+oras push myregistry.azurecr.io/sample-plugin:v1 ./sample
 ```
 
-Next, users will need to have the plugin within their Ratify pod in order to use it at runtime.
+Referencing the artifact in a verifier configuration:
 
-#### Custom Ratify Image
+```yaml
+apiVersion: config.ratify.deislabs.io/v1alpha1
+kind: Verifier
+metadata:
+  name: verifier-sample
+spec:
+  name: sample
+  artifactTypes: application/vnd.cncf.notary.signature
+  # tell Ratify that you want your plugin to be pulled from the target artifact and how to authenticate
+  source:
+    artifact: myregistry.azurecr.io/sample-plugin:v1
+    authProvider:
+      name: azureWorkloadIdentity
+  # extra configuration for your plugin goes here
+  allowedPrefixes:
+    - "wabbitnetworks.azurecr.io/"
+```
 
-One possible method to distribute plugins is by building a custom Ratify image
+### Fallback: Custom Ratify Image
+
+If dynamic plugins aren't an option in your environment, an alternative method to distribute plugins is by building a custom Ratify image that contains your plugin.
 
 ```Dockerfile
-FROM ghcr.io/deislabs/ratify:v1.0.0-beta.2 AS ratify
+FROM ghcr.io/deislabs/ratify:v1.0.0-rc.1 AS ratify
 
+# place in the default plugins directory
 COPY ./sample /.ratify/plugins/sample
 ```
 
 You'll need to use this image, which contains your plugin, in your Ratify chart deployment. Ex:
 
 ```shell
-docker build -t myregistry.azurecr.io/ratify-with-plugins:v1.0.0-beta.2 .
-docker push myregistry.azurecr.io/ratify-with-plugins:v1.0.0-beta.2
+docker build -t myregistry.azurecr.io/ratify-with-plugins:v1.0.0-rc.1 .
+docker push myregistry.azurecr.io/ratify-with-plugins:v1.0.0-rc.1
 ```
 
 And in your Ratify [chart](https://github.com/deislabs/ratify/tree/main/charts/ratify) values:
@@ -116,14 +140,14 @@ And in your Ratify [chart](https://github.com/deislabs/ratify/tree/main/charts/r
 ```yaml
 image:
   repository: myregistry.azurecr.io/ratify-with-plugins
-  tag: v1.0.0-beta.2
+  tag: v1.0.0-rc.1
   pullPolicy: IfNotPresent
 # /snip...
 ```
 
-#### Configuration
+### Configuration
 
-Create a `Verifier` resource to register your custom plugin
+With a custom image, your plugin is already present. Register your `Verifier` resource normally without the `spec.source` property.
 
 ```yaml
 apiVersion: config.ratify.deislabs.io/v1alpha1

@@ -1,11 +1,6 @@
 {
 	"name": "Go",
-	"image": "mcr.microsoft.com/devcontainers/go:0-1-bullseye",
-	"features": {
-		"ghcr.io/devcontainers/features/node:1": {
-			"version": "none"
-		}
-	},
+	"dockerFile": "Dockerfile",
 
 	// Configure tool-specific properties.
 	"customizations": {
@@ -16,8 +11,15 @@
 				"go.toolsManagement.checkForUpdates": "local",
 				"go.useLanguageServer": true,
 				"go.gopath": "/go"
-			}
+			},
+			"extensions": [
+				"golang.go"
+			]
 		}
+	},
+	"features": {
+		// Optional, for easier authentication if using ORAS CLI + ACR
+		"ghcr.io/devcontainers/features/azure-cli:latest": {}
 	}
 
 	// Use 'forwardPorts' to make a list of ports inside the container available locally.
